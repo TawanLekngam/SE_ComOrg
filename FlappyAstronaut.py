@@ -1,77 +1,82 @@
-from random import randint
-from time import sleep
-
 from sense_emu import SenseHat
+from time import sleep
+from random import randint
+from threading import Thread
 
 sense = SenseHat()
-over = False
-pos_x = 2
-pos_y = 4
+sense.clear()
 
-GREEN = (178, 235, 103)
-STAR = (247, 220, 143)
-BLACK = (0, 0, 0)
-
-matrix = [[BLACK for column in range(8)] for row in range(8)]
-
-
-def flatten(matrix: list):
-    flattened = [pixel for row in matrix for pixel in row]
-    return flattened
+##Globals
+game_over = False
+RED = (255,0,0)
+BLACK = (0,0,0)
+BLUE = (0,0,255)
+y = 4
+speed = +1
 
 
-def gen_pipes(matrix: list):
-    for row in matrix:
-        row[-1] = GREEN
-    gap = randint(1, 6)
-    matrix[gap][-1] = BLACK
-    matrix[gap - 1][-1] = BLACK
-    matrix[gap + 1][-1] = BLACK
-    return matrix
+def draw_column():
+    global game_over
+    x = 7
+    gap = randint(2,6)
+    while x > 0 and not game_over:
+        for led in range(8):
+            sense.set_pixel(x,led,RED)
+        sense.set_pixel(x,gap,BLACK)
+        sense.set_pixel(x,gap-1,BLACK)
+        sense.set_pixel(x,gap+1,BLACK)
+        sleep(0.5)
+        for i in range(8):
+            sense.set_pixel(x,i,BLACK)
+        if collision(x,gap):
+            game_over = True
+        x -= 1
 
 
-def move_pipes(matrix: list):
-    for row in matrix:
-        for i in range(7):
-            row[i] = row[i + 1]
-        row[-1] = BLACK
-    return matrix
+def draw_columns():
+    while not game_over:
+        column = Thread(target=draw_column)
+        column.start()
+        sleep(2)
 
+def get_shake():
+    global speed
+    while not game_over:
+        accel = sense.get_accelerometer_raw()
+        x = round(accel['x'])
+        y = round(accel['y'])
+        z = round(accel['z'])
+        sleep(0.01)
+        if x != 0 or y != 0 or z != 1:
+            speed = -1
+        else:
+            speed = +1
 
-def draw_pilot(event):
-    global pos_x
-    global pos_y
-    global over
-    sense.set_pixel(pos_x, pos_y, BLACK)
-    if event.action == "pressed":
-        if event.direction == "up" and pos_y > 0:
-            pos_y -= 1
-        elif event.direction == "down" and pos_y < 7:
-            pos_y += 1
-
-    sense.set_pixel(pos_x, pos_y, STAR)
-
-
-def check_collision(matrix):
-    if matrix[pos_y][pos_x] == GREEN:
-        return True
+def collision(x,gap):
+    if x == 3:
+        if y < gap -1 or y > gap +1:
+            return True
     return False
 
 
-sense.stick.direction_any = draw_pilot
+columns = Thread(target=draw_columns)
+columns.start()
 
-while not over:
-    matrix = gen_pipes(matrix)
-    if check_collision(matrix):
-        over = True
-    for i in range(4):
-        sense.set_pixels(flatten(matrix))
-        matrix = move_pipes(matrix)
-        sense.set_pixel(pos_x, pos_y, STAR)
-        if check_collision(matrix):
-            over = True
-            break
-        sleep(1)
+shake = Thread(target=get_shake)
+shake.start()
 
-sense.clear()
-sense.show_message('You Lose')
+while not game_over:
+    sense.set_pixel(3,y,BLUE)
+    sleep(0.1)
+    sense.set_pixel(3,y,BLACK)
+    y += speed
+    if y > 7:
+        y = 7
+    if y < 0:
+        y = 0
+
+
+shake.join()
+columns.join()
+
+sense.show_message("Game Over", text_colour=(255,0,0))
